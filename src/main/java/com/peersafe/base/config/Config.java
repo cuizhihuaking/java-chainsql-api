@@ -4,6 +4,7 @@ import java.security.Security;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
+import com.peersafe.base.crypto.sm.SMDevice;
 import com.peersafe.base.encodings.B58IdentiferCodecs;
 import com.peersafe.base.encodings.base58.B58;
 
@@ -94,14 +95,14 @@ public class Config {
 	public static boolean setUseGM(boolean useGM,boolean bNewKeyPair,String pin){
 		if(useGM){
 			newKeyPair_ = bNewKeyPair;
-//			boolean bRet = SMDevice.openDevice();
-//			if(!bRet)
-//				return false;
-//			bRet = SMDevice.verifyPin(pin);
-//			if(bRet)
-//				useSM_ = useGM;
-//			return bRet;
-			return true;
+			boolean bRet = SMDevice.openDevice();
+			if(!bRet)
+				return false;
+			bRet = SMDevice.verifyPin(pin);
+			if(bRet)
+				useSM_ = useGM;
+			return bRet;
+//			return true;
 		}else{
 			useSM_ = useGM;
 			return true;
