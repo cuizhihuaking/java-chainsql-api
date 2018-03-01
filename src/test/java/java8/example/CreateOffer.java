@@ -1,27 +1,24 @@
 package java8.example;
 
-import static java8.example.Print.*;
+import static java8.example.Print.printErr;
+import static java8.example.Print.print;
+
+import java.util.Timer;
+import java.util.TimerTask;
 
 import org.json.JSONObject;
 
 import com.peersafe.base.client.Account;
 import com.peersafe.base.client.Client;
-import com.peersafe.base.client.requests.Request;
 import com.peersafe.base.client.responses.Response;
 import com.peersafe.base.client.transactions.ManagedTxn;
 import com.peersafe.base.client.transactions.TransactionManager;
 import com.peersafe.base.client.transport.impl.JavaWebSocketTransportImpl;
-import com.peersafe.base.core.coretypes.AccountID;
-import com.peersafe.base.core.coretypes.Amount;
-import com.peersafe.base.core.coretypes.Blob;
-import com.peersafe.base.core.coretypes.uint.UInt16;
-import com.peersafe.base.core.coretypes.uint.UInt32;
 import com.peersafe.base.core.serialized.enums.TransactionType;
 import com.peersafe.base.core.types.known.tx.Transaction;
 import com.peersafe.base.core.types.known.tx.result.TransactionResult;
-import com.peersafe.base.core.types.known.tx.signed.SignedTransaction;
-import com.peersafe.base.core.types.known.tx.txns.TableListSet;
 import com.peersafe.chainsql.core.Chainsql;
+import com.peersafe.chainsql.util.Util;
 
 /**
  * This example creates an offer to sell an account's
@@ -33,26 +30,33 @@ public class CreateOffer {
         // We need a valid seed
 
        new Client(new JavaWebSocketTransportImpl())
-                    .connect("wss://192.168.0.114:6007" ,(c)->new CreateOffer(c,"xxWFBu6veVgMnAqNf6YFRV2UENRd3")); 
+                    .connect("ws://192.168.0.114:6007" ,(c)->new CreateOffer(c,"xxWFBu6veVgMnAqNf6YFRV2UENRd3")); 
        
  
     }
 
     public CreateOffer (Client client, String seed) {
+    	System.out.println("connected");
     	buyOffer(client,seed);
     	try {
-			Thread.sleep(3000);
-		} catch (InterruptedException e) {
+    		Timer timer = new Timer();
+    		timer.schedule(new TimerTask() {
+    		        public void run() {
+    		        	System.out.println("begin sell");
+    		        	sellOffer(client,seed);
+    		        }
+    		}, 5000 , 100000);
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
-    	System.out.println("begin sell");
-    	sellOffer(client,seed);
     }
 
     private void buyOffer(Client client, String seed) {
         Account account = client.accountFromSeed(seed);
         TransactionManager tm = account.transactionManager();
-
+//        while(!account.getAccountRoot().primed()) {
+//        	Util.waiting();
+//        }
         String str ="{" +
         	    "'TransactionType': 'OfferCreate',"+
         	    "'TakerPays': {"+
@@ -73,7 +77,7 @@ public class CreateOffer {
 			e.printStackTrace();
 		}
 
-//        System.out.println(transaction.prettyJSON());
+        System.out.println(transaction.prettyJSON());
         tm.queue(tm.manage(transaction)
 	            .onValidated(this::onValidated1)
 	                .onError(this::onError1));
