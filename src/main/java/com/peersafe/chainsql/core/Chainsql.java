@@ -7,6 +7,8 @@ import java.security.Security;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.bouncycastle.crypto.digests.RIPEMD160Digest;
 import org.bouncycastle.crypto.digests.SHA256Digest;
@@ -27,8 +29,10 @@ import com.peersafe.base.core.serialized.enums.TransactionType;
 import com.peersafe.base.core.types.known.tx.Transaction;
 import com.peersafe.base.core.types.known.tx.signed.SignedTransaction;
 import com.peersafe.base.crypto.ecdsa.IKeyPair;
+import com.peersafe.base.crypto.ecdsa.K256KeyPair;
 import com.peersafe.base.crypto.ecdsa.Seed;
 import com.peersafe.base.encodings.B58IdentiferCodecs;
+import com.peersafe.base.utils.Utils;
 import com.peersafe.chainsql.crypto.Ecies;
 import com.peersafe.chainsql.crypto.EncryptCommon;
 import com.peersafe.chainsql.net.Connection;
@@ -42,9 +46,12 @@ public class Chainsql extends Submit {
 
 	private JSONObject mTxJson;
 	
-	private static final int PASSWORD_LENGTH = 16;  
+	private static final int PASSWORD_LENGTH = 32;  
 	private static final int DEFAULT_TX_LIMIT = 20;
 	
+	// Logger
+    public static final Logger logger = Logger.getLogger(Chainsql.class.getName());
+    
 	private JSONObject mRetJson;
 	//reconnect callback when disconnected
 	private Callback<JSONObject> reconnectCb = null;
@@ -72,7 +79,11 @@ public class Chainsql extends Submit {
 	public void use(String address) {
 		this.connection.scope = address;
 	}
-
+	
+	static {
+		Security.addProvider(new BouncyCastleProvider());	
+	}
+	
 	public static final Chainsql c = new Chainsql();
 
 	/**
@@ -590,6 +601,31 @@ public class Chainsql extends Submit {
 		return this;
 		
 	}
+	/**
+	 * check if publickey matches user
+	 * @param user
+	 * @param userPublicKey
+	 * @return
+	 */
+	private boolean checkUserMatchPublic(String user,String userPublicKey) {
+		if(user.isEmpty() || userPublicKey.isEmpty())
+			return false;
+		byte[] pubBytes = getB58IdentiferCodecs().decode(userPublicKey, B58IdentiferCodecs.VER_ACCOUNT_PUBLIC);
+		byte[] o;
+		{
+			SHA256Digest sha = new SHA256Digest();
+			sha.update(pubBytes, 0, pubBytes.length);
+		    byte[] result = new byte[sha.getDigestSize()];
+		    sha.doFinal(result, 0);
+		    
+			RIPEMD160Digest d = new RIPEMD160Digest();
+		    d.update (result, 0, result.length);
+		    o = new byte[d.getDigestSize()];
+		    d.doFinal (o, 0);
+		}
+		String address = getB58IdentiferCodecs().encodeAddress(o);
+		return user.equals(address);
+	}
 
 	/**
 	 * Grant a user with authorities to operate a table.
@@ -603,6 +639,10 @@ public class Chainsql extends Submit {
 	 */
 	public Chainsql grant(String name, String user,String userPublicKey,String flag){
 		String token = "";
+		if(!checkUserMatchPublic(user,userPublicKey)) {
+			logger.log(Level.SEVERE, "PublicKey does not match User");
+			return null;
+		}
 		GenericPair<String,String> pair = new GenericPair<String,String>(this.connection.address,name);
 		if(mapToken.containsKey(pair)){
 			token = mapToken.get(pair);
@@ -976,13 +1016,11 @@ public class Chainsql extends Submit {
 	 * 		   publicKey:Account publickey. 
 	 */
 	public JSONObject generateAddress(){
-		Security.addProvider(new BouncyCastleProvider());
 		Seed seed = Seed.randomSeed();		
 		return generateAddress(seed);
 	}
 	
 	public JSONObject generateAddress(String secret){
-		Security.addProvider(new BouncyCastleProvider());
 		Seed seed = Seed.fromBase58(secret);
 		
 		return generateAddress(seed);
@@ -1147,6 +1185,10 @@ public class Chainsql extends Submit {
 	 * @return 密文
 	 */
 	public String encrypt(String plainText,List<String> listPublicKey) {
+		if(listPublicKey.size() == 0) {
+			logger.log(Level.SEVERE, "PublicKey list is empty");
+			return "";
+		}
 		byte[] cipher = Ecies.encryptText(plainText,listPublicKey);
 		if(cipher == null)
 			return "";
@@ -1162,5 +1204,22 @@ public class Chainsql extends Submit {
 	public String decrypt(String cipher,String secret) {
 		byte[] cipherBytes = Util.hexToBytes(cipher);
 		return Ecies.decryptText(cipherBytes, secret);
+	}
+	
+	public byte[] sign(byte[] message,String secret) {
+		IKeyPair keyPair = Seed.getKeyPair(secret);
+		return keyPair.signMessage(message);
+	}
+	
+	public boolean verify(byte[] message,byte[] signature,String publicKey) {
+		byte[] pubBytes = null;
+		if(publicKey.length() == 66) {
+			pubBytes = Util.hexToBytes(publicKey);
+		}else {
+			pubBytes = getB58IdentiferCodecs().decode(publicKey, B58IdentiferCodecs.VER_ACCOUNT_PUBLIC);
+		}
+        
+        K256KeyPair keyPair = new K256KeyPair(null,Utils.uBigInt(pubBytes));
+        return keyPair.verifySignature(message, signature);
 	}
 }
